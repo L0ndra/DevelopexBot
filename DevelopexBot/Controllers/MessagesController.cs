@@ -5,7 +5,10 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using Microsoft.Bot.Builder.Dialogs;
+using Microsoft.Bot.Builder.Dialogs.Internals;
 using Microsoft.Bot.Connector;
+using Microsoft.Data.Edm.Library.Expressions;
 using Newtonsoft.Json;
 
 namespace DevelopexBot
@@ -19,15 +22,9 @@ namespace DevelopexBot
         /// </summary>
         public async Task<HttpResponseMessage> Post([FromBody]Activity activity)
         {
-            if (activity.Type == ActivityTypes.Message)
+            if (activity.Type == ActivityTypes.Message || activity.Type == ActivityTypes.ConversationUpdate)
             {
-                ConnectorClient connector = new ConnectorClient(new Uri(activity.ServiceUrl));
-                // calculate something for us to return
-                int length = (activity.Text ?? string.Empty).Length;
-
-                // return our reply to the user
-                Activity reply = activity.CreateReply($"You sent {activity.Text} which was {length} characters");
-                await connector.Conversations.ReplyToActivityAsync(reply);
+                await ExecuteAction(activity);
             }
             else
             {
@@ -64,6 +61,25 @@ namespace DevelopexBot
             }
 
             return null;
+        }
+
+        private async Task ExecuteAction(Activity activity)
+        {
+            var user = await UserDal.GetUserAsync(activity.From.Id);
+            if (user == null)
+            {
+                user = new UserModel(activity.From.Id)
+                {
+                    Name = activity.From.Id,
+                    Activity = JsonConvert.SerializeObject(activity)
+                };
+                await UserDal.AddNewUserToTable(user);
+            }
+
+            if (user.IsAdmin && activity.Type == ActivityTypes.Message)
+            {
+                await Conversation.SendAsync(activity, () => new RoleDialog());
+            }
         }
     }
 }
